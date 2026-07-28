@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+web/dist/
+web/dist-ssr/
+functions/lib/
+
+# Env / secrets
+*.local
+.firebaserc
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
