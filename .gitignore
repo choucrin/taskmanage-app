@@ -10,6 +10,10 @@ functions/lib/
 *.local
 .firebaserc
 
+# generate-sw-config.mjsによる生成物(実APIキーを含むためgit管理外。
+# web/firebase-messaging-sw.template.js がgit管理対象のテンプレート本体)
+web/public/firebase-messaging-sw.js
+
 # Firebase
 .firebase/
 firebase-debug.log

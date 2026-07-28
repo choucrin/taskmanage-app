@@ -42,9 +42,26 @@ npm test
 3. **Firestore Database** を作成する(本番モードで開始してよい。ルールは後述の手順で上書きする)。
 4. プロジェクト設定 → 全般 → 「マイアプリ」でウェブアプリを追加し、表示された `firebaseConfig` の値を `web/.env.local` の `VITE_FIREBASE_*` に転記する。
 5. プロジェクト設定 → Cloud Messaging → 「ウェブ構成」で鍵ペアを生成し、`VITE_FIREBASE_VAPID_KEY` に設定する。
-6. `web/public/firebase-messaging-sw.js` 内の `firebaseConfig`(`REPLACE_ME` の部分)を実際の値に書き換える。この値はクライアント公開情報のためコミットして問題ない。
+6. `web/public/firebase-messaging-sw.js` は手動で編集しない。`npm run dev` / `npm run build` を実行すると `web/scripts/generate-sw-config.mjs` が `web/firebase-messaging-sw.template.js` と `.env.local` の値から自動生成する(生成物のためgit管理外)。
 7. プロジェクトを **Blazeプラン(従量課金)** にアップグレードする(Cloud Functions / Cloud Schedulerの利用に必須)。
 8. **予算アラートを必ず設定する**:Google Cloud Console → 請求 → 予算とアラート → 月額 $1 程度で新規作成。Blazeプランは支出上限がないため、想定外の高額請求を防ぐための安全策として省略しないこと。
+
+## 本人限定アクセスの設定(必須)
+
+Googleログインは「Googleアカウントを持つ人なら誰でもログイン可能」なプロバイダのため、これだけでは第三者のログインを防げない。以下の3箇所で開発者本人のFirebase UIDのみを許可するようにしている:
+
+- `web/firestore.rules`(`isOwner()` 関数)
+- `web/src/constants.ts`(`ALLOWED_UID`、フロントエンド側の表示制御)
+- `functions/src/index.ts`(`ALLOWED_UID`、通知送信対象の絞り込み)
+
+Firebaseプロジェクトを作り直した場合は、初回ログイン後に Firebase Console → Authentication → Users タブで自分のUIDを確認し、上記3箇所を書き換えること。
+
+### APIキーの追加制限(推奨)
+
+Firebase APIキーは秘匿情報ではないが、念のため Google Cloud Console → APIとサービス → 認証情報 で以下を設定しておくと安全性が増す:
+
+- アプリケーションの制限:HTTPリファラー制限で `https://<GitHubユーザー名>.github.io/*`、`https://<project-id>.firebaseapp.com/*`、`http://localhost:*` のみ許可
+- APIの制限:Identity Toolkit API / Token Service API / Cloud Firestore API / Firebase Installations API / Cloud Messaging API のみ許可
 
 ## Firestore Security Rules / Cloud Functions のデプロイ
 
