@@ -14,6 +14,7 @@ interface AppDataValue {
   progressLogs: ProgressLog[];
   notificationSettings: NotificationSetting[];
   loading: boolean;
+  hasError: boolean;
 }
 
 const AppDataContext = createContext<AppDataValue | null>(null);
@@ -44,6 +45,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     progressLogs.loading ||
     notificationSettings.loading;
 
+  // いずれかの購読がエラーになった場合、loadingが false になっても
+  // データが揃わないままレンダリングされてしまうため、専用フラグで区別する。
+  const hasError = Boolean(
+    genres.error ||
+      goals.error ||
+      tasks.error ||
+      selectiveGroups.error ||
+      progressLogs.error ||
+      notificationSettings.error,
+  );
+
   const value: AppDataValue = {
     uid,
     authLoading,
@@ -54,6 +66,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     progressLogs: progressLogs.items,
     notificationSettings: notificationSettings.items,
     loading,
+    hasError,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

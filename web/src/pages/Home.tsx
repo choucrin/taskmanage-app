@@ -10,6 +10,7 @@ export function Home() {
   const { tasks, progressLogs, goals } = useAppData();
   const { recordProgress } = useProgressActions();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const dateKey = todayKey();
 
   const todayTasks = useMemo(() => getTodayTasks(tasks, dateKey), [tasks, dateKey]);
@@ -24,9 +25,15 @@ export function Home() {
   );
 
   async function handleRecord(taskId: string, value: number) {
-    const result = await recordProgress(taskId, dateKey, value);
-    if (result.archivedGoalName) {
-      setToastMessage(`「${result.archivedGoalName}」を達成しました!目標をアーカイブしました。`);
+    setErrorMessage(null);
+    try {
+      const result = await recordProgress(taskId, dateKey, value);
+      if (result.archivedGoalName) {
+        setToastMessage(`「${result.archivedGoalName}」を達成しました!目標をアーカイブしました。`);
+      }
+    } catch (e) {
+      console.error('進捗の登録に失敗しました:', e);
+      setErrorMessage('進捗の登録に失敗しました。もう一度お試しください。');
     }
   }
 
@@ -34,6 +41,7 @@ export function Home() {
     <div className="home-page">
       <h1>本日のタスク({dateKey})</h1>
 
+      {errorMessage && <p className="error">{errorMessage}</p>}
       {activeTodayTasks.length === 0 && <p>本日実施予定のタスクはありません。</p>}
 
       <ul className="task-list">

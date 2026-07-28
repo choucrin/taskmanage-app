@@ -15,15 +15,22 @@ export function GoalForm() {
   const [genreId, setGenreId] = useState('');
   const [newGenreName, setNewGenreName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!uid || !name.trim() || !targetValue) return;
     setSubmitting(true);
+    setError(null);
     try {
       let resolvedGenreId = genreId || undefined;
       if (!resolvedGenreId && newGenreName.trim()) {
         resolvedGenreId = await addItem(uid, 'genres', { name: newGenreName.trim() });
+        // 作成したジャンルをstateに反映しておく。この後の目標作成でエラーになり
+        // 再送信された場合、genreIdが既にセットされているため同名ジャンルが
+        // 重複作成されるのを防ぐ。
+        setGenreId(resolvedGenreId);
+        setNewGenreName('');
       }
 
       await addItem(uid, 'goals', {
@@ -36,6 +43,9 @@ export function GoalForm() {
         cumulativeAchieved: 0,
       });
       navigate('/tasks/new');
+    } catch (e) {
+      console.error('目標の登録に失敗しました:', e);
+      setError('目標の登録に失敗しました。もう一度お試しください。');
     } finally {
       setSubmitting(false);
     }
@@ -118,6 +128,7 @@ export function GoalForm() {
         <button type="submit" disabled={submitting}>
           登録してタスク設定へ進む
         </button>
+        {error && <p className="error">{error}</p>}
       </form>
     </div>
   );

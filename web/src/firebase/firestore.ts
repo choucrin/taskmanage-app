@@ -4,7 +4,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -29,15 +28,36 @@ export function subscribeToCollection<T extends { id: string }>(
   uid: string,
   name: CollectionName,
   callback: (items: T[]) => void,
-  constraints: QueryConstraint[] = [orderBy('createdAt', 'asc')],
+  constraints: QueryConstraint[] = [],
+  onError?: (error: Error) => void,
 ) {
+  // orderBy('createdAt', ...) をデフォルトにしない: Firestoreのquery orderByは
+  // 指定フィールドを持たないドキュメントを結果から除外してしまう。
+  // upsertNotificationSetting/upsertProgressLog はcreatedAtを書き込まないため、
+  // 以前このデフォルトを使っていた際はnotificationSettings/progressLogsの
+  // 書き込みが購読結果に一切反映されない不具合があった。
   const q = query(userCollection(uid, name), ...constraints);
-  return onSnapshot(q, (snapshot) => {
-    const items = snapshot.docs.map(
-      (d) => ({ id: d.id, ...d.data() }) as T,
-    );
-    callback(items);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      // サーバ側のorderByは使わないため、表示順(作成順)はここでクライアントソートする。
+      // createdAtを持たないドキュメント(notificationSettings等)は0扱いで先頭に来るだけで実害はない。
+      const items = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }) as T)
+        .sort((a, b) => {
+          const aTime = (a as { createdAt?: number }).createdAt ?? 0;
+          const bTime = (b as { createdAt?: number }).createdAt ?? 0;
+          return aTime - bTime;
+        });
+      callback(items);
+    },
+    (error) => {
+      // エラーコールバックを渡さないと、購読エラー時にloadingがtrueのまま
+      // 固まり続け、App.tsxの「読み込み中...」から復帰できなくなる。
+      console.error(`Firestore購読エラー(${name}):`, error);
+      onError?.(error);
+    },
+  );
 }
 
 export async function addItem<T extends DocumentData>(

@@ -28,12 +28,24 @@ function Unauthorized() {
   );
 }
 
+function LoadError() {
+  return (
+    <div className="loading">
+      <p>データの読み込みに失敗しました。</p>
+      <button type="button" onClick={() => window.location.reload()}>
+        再読み込み
+      </button>
+    </div>
+  );
+}
+
 function AppRoutes() {
-  const { uid, authLoading, loading } = useAppData();
+  const { uid, authLoading, loading, hasError } = useAppData();
 
   if (authLoading) return <div className="loading">読み込み中...</div>;
   if (!uid) return <Login />;
   if (uid !== ALLOWED_UID) return <Unauthorized />;
+  if (hasError) return <LoadError />;
   if (loading) return <div className="loading">読み込み中...</div>;
 
   return (

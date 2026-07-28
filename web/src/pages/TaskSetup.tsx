@@ -23,6 +23,11 @@ export function TaskSetup() {
   const [newGroupName, setNewGroupName] = useState('');
   const [minRequired, setMinRequired] = useState('1');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // タスク作成後に選択的グループ側の処理が失敗し再送信された場合、
+  // 既に作成済みのtask/groupを再利用して重複作成を防ぐためのキャッシュ。
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
+  const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
 
   function handleGoalChange(id: string) {
     setGoalId(id);
@@ -40,38 +45,49 @@ export function TaskSetup() {
     e.preventDefault();
     if (!uid || !goalId || !displayName.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       const dates = datesText
         .split(',')
         .map((d) => d.trim())
         .filter(Boolean);
 
-      const taskId = await addItem(uid, 'tasks', {
-        goalId,
-        displayName: displayName.trim(),
-        schedule: { weekdays, dates },
-        targetType,
-        targetValue: Number(targetValue),
-      });
+      const taskId =
+        createdTaskId ??
+        (await addItem(uid, 'tasks', {
+          goalId,
+          displayName: displayName.trim(),
+          schedule: { weekdays, dates },
+          targetType,
+          targetValue: Number(targetValue),
+        }));
+      if (!createdTaskId) setCreatedTaskId(taskId);
 
       if (groupMode === 'new' && newGroupName.trim()) {
-        const groupId = await addItem(uid, 'selectiveGroups', {
-          name: newGroupName.trim(),
-          taskIds: [taskId],
-          minRequired: Number(minRequired),
-        });
+        const groupId =
+          createdGroupId ??
+          (await addItem(uid, 'selectiveGroups', {
+            name: newGroupName.trim(),
+            taskIds: [taskId],
+            minRequired: Number(minRequired),
+          }));
+        if (!createdGroupId) setCreatedGroupId(groupId);
         await updateItem(uid, 'tasks', taskId, { selectiveGroupId: groupId });
       } else if (groupMode === 'existing' && existingGroupId) {
         const group = selectiveGroups.find((g) => g.id === existingGroupId);
         if (group) {
-          await updateItem(uid, 'selectiveGroups', existingGroupId, {
-            taskIds: [...group.taskIds, taskId],
-          });
+          const taskIds = group.taskIds.includes(taskId)
+            ? group.taskIds
+            : [...group.taskIds, taskId];
+          await updateItem(uid, 'selectiveGroups', existingGroupId, { taskIds });
           await updateItem(uid, 'tasks', taskId, { selectiveGroupId: existingGroupId });
         }
       }
 
       navigate('/');
+    } catch (e) {
+      console.error('タスクの登録に失敗しました:', e);
+      setError('タスクの登録に失敗しました。もう一度お試しください。');
     } finally {
       setSubmitting(false);
     }
@@ -198,6 +214,7 @@ export function TaskSetup() {
         <button type="submit" disabled={submitting}>
           タスクを登録
         </button>
+        {error && <p className="error">{error}</p>}
       </form>
     </div>
   );
