@@ -123,6 +123,23 @@ label {
   margin-bottom: 12px;
 }
 
+/* チェックボックス/ラジオボタンを直下に持つlabelは、テキストと横並びにする
+   (縦積みのままだとWindows等ブラウザデフォルトのcheckbox/radioサイズとの
+   組み合わせで文字列とのずれが目立つため) */
+label:has(> input[type='checkbox']),
+label:has(> input[type='radio']) {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+label:has(> input[type='checkbox']) > input,
+label:has(> input[type='radio']) > input {
+  margin: 0;
+  flex-shrink: 0;
+}
+
 fieldset {
   border: 1px solid var(--border);
   border-radius: 8px;

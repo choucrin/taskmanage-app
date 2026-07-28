@@ -31,6 +31,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // firebase-messaging-sw.jsは別スコープで独立動作するFCM専用SWであり、
+        // PWA本体のプリキャッシュ対象に含める必要がないため除外する
+        globIgnores: ['firebase-messaging-sw.js'],
       },
     }),
   ],

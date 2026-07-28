@@ -14,7 +14,16 @@ export async function requestNotificationPermissionAndToken(): Promise<string | 
   if (permission !== 'granted') return null;
 
   const messaging = getMessaging(app);
-  const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  // vite-plugin-pwaが生成するsw.js(vite.config.tsのbasePath配下)と競合しないよう、
+  // firebase-messaging-sw.jsは専用スコープに登録する。
+  // 同一スコープに複数のService Workerを登録すると、PWA側のautoUpdate機構が
+  // controllerの切り替わりを検知してページの状態がおかしくなることがある。
+  // GitHub Pagesのサブパス配信(base: '/リポジトリ名/')に対応するため、
+  // 絶対パス '/' 始まりではなく import.meta.env.BASE_URL を基準に組み立てる。
+  const base = import.meta.env.BASE_URL;
+  const registration = await navigator.serviceWorker.register(`${base}firebase-messaging-sw.js`, {
+    scope: `${base}firebase-cloud-messaging-push-scope`,
+  });
 
   const token = await getToken(messaging, {
     vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,

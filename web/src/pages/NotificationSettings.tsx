@@ -15,33 +15,46 @@ export function NotificationSettings() {
 
   async function handleEnablePush() {
     if (!uid) return;
-    const token = await requestNotificationPermissionAndToken();
-    if (token) {
-      await saveFcmToken(uid, token);
-      setPermissionMessage('通知の許可を取得しました。');
-    } else {
-      setPermissionMessage(
-        '通知が許可されませんでした。iPhone/iPadの場合はホーム画面に追加した状態でアクセスしているか確認してください。',
-      );
+    try {
+      const token = await requestNotificationPermissionAndToken();
+      if (token) {
+        await saveFcmToken(uid, token);
+        setPermissionMessage('通知の許可を取得しました。');
+      } else {
+        setPermissionMessage(
+          '通知が許可されませんでした。iPhone/iPadの場合はホーム画面に追加した状態でアクセスしているか確認してください。',
+        );
+      }
+    } catch (e) {
+      console.error('通知の許可取得に失敗しました:', e);
+      setPermissionMessage('通知の許可取得中にエラーが発生しました。もう一度お試しください。');
     }
   }
 
   async function handleToggle(type: NotificationType, enabled: boolean) {
     if (!uid) return;
     const existing = notificationSettings.find((n) => n.type === type);
-    await upsertNotificationSetting(uid, type, {
-      enabled,
-      time: existing?.time ?? '08:00',
-    });
+    try {
+      await upsertNotificationSetting(uid, type, {
+        enabled,
+        time: existing?.time ?? '08:00',
+      });
+    } catch (e) {
+      console.error('通知設定の保存に失敗しました:', e);
+    }
   }
 
   async function handleTimeChange(type: NotificationType, time: string) {
     if (!uid) return;
     const existing = notificationSettings.find((n) => n.type === type);
-    await upsertNotificationSetting(uid, type, {
-      enabled: existing?.enabled ?? false,
-      time,
-    });
+    try {
+      await upsertNotificationSetting(uid, type, {
+        enabled: existing?.enabled ?? false,
+        time,
+      });
+    } catch (e) {
+      console.error('通知設定の保存に失敗しました:', e);
+    }
   }
 
   return (
