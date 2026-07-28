@@ -44,6 +44,16 @@ export function TaskSetup() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!uid || !goalId || !displayName.trim()) return;
+    // 選択したモードに応じた入力が伴っていない場合、連携なしとして無言で
+    // 成功扱いにはせず、ユーザーに選び直させる。
+    if (groupMode === 'existing' && !existingGroupId) {
+      setError('連携先のグループを選択してください。');
+      return;
+    }
+    if (groupMode === 'new' && !newGroupName.trim()) {
+      setError('新規グループ名を入力してください。');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -75,13 +85,16 @@ export function TaskSetup() {
         await updateItem(uid, 'tasks', taskId, { selectiveGroupId: groupId });
       } else if (groupMode === 'existing' && existingGroupId) {
         const group = selectiveGroups.find((g) => g.id === existingGroupId);
-        if (group) {
-          const taskIds = group.taskIds.includes(taskId)
-            ? group.taskIds
-            : [...group.taskIds, taskId];
-          await updateItem(uid, 'selectiveGroups', existingGroupId, { taskIds });
-          await updateItem(uid, 'tasks', taskId, { selectiveGroupId: existingGroupId });
+        if (!group) {
+          // ダングリング参照を作らないよう、selectiveGroupIdは更新せずエラーとして扱う。
+          setError('選択したグループが見つかりませんでした。選び直してください。');
+          return;
         }
+        const taskIds = group.taskIds.includes(taskId)
+          ? group.taskIds
+          : [...group.taskIds, taskId];
+        await updateItem(uid, 'selectiveGroups', existingGroupId, { taskIds });
+        await updateItem(uid, 'tasks', taskId, { selectiveGroupId: existingGroupId });
       }
 
       navigate('/');
@@ -178,7 +191,11 @@ export function TaskSetup() {
             既存グループに追加
           </label>
           {groupMode === 'existing' && (
-            <select value={existingGroupId} onChange={(e) => setExistingGroupId(e.target.value)}>
+            <select
+              value={existingGroupId}
+              onChange={(e) => setExistingGroupId(e.target.value)}
+              required
+            >
               <option value="">選択してください</option>
               {selectiveGroups.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -197,6 +214,7 @@ export function TaskSetup() {
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
                 placeholder="グループ名"
+                required
               />
               <label>
                 達成扱いに必要な最小達成個数
@@ -205,6 +223,7 @@ export function TaskSetup() {
                   min={1}
                   value={minRequired}
                   onChange={(e) => setMinRequired(e.target.value)}
+                  required
                 />
               </label>
             </>

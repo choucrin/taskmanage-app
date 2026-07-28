@@ -10,6 +10,7 @@ import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { NotificationSettings } from './pages/NotificationSettings';
 import { ProgressBoard } from './pages/ProgressBoard';
+import { TaskManagement } from './pages/TaskManagement';
 import { TaskSetup } from './pages/TaskSetup';
 import './App.css';
 
@@ -58,6 +59,7 @@ function AppRoutes() {
           <Route path="/archive" element={<Archive />} />
           <Route path="/goals/new" element={<GoalForm />} />
           <Route path="/tasks/new" element={<TaskSetup />} />
+          <Route path="/tasks" element={<TaskManagement />} />
           <Route path="/notifications" element={<NotificationSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
