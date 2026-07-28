@@ -9,6 +9,12 @@ initializeApp();
 const db = getFirestore();
 const messaging = getMessaging();
 
+/**
+ * 個人利用専用アプリのため、このUID以外は通知送信の対象にしない。
+ * Firestore Rules側でも同じ値を許可条件にしており、ここは念のための二重防御。
+ */
+const ALLOWED_UID = 'OBBBWdPsQqdzrJqDDLcHZ2EpAps2';
+
 /** Asia/Tokyo基準の現在時刻を HH:mm 形式で返す */
 function currentTimeHHmm(): string {
   const formatter = new Intl.DateTimeFormat('ja-JP', {
@@ -95,6 +101,7 @@ export const checkAndSendNotifications = onSchedule(
 
     for (const userDoc of usersSnapshot.docs) {
       const uid = userDoc.id;
+      if (uid !== ALLOWED_UID) continue;
       const fcmToken = userDoc.data().fcmToken as string | undefined;
       if (!fcmToken) continue;
 

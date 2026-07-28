@@ -1,4 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react';
+import { ALLOWED_UID } from '../constants';
 import type { Genre, Goal, NotificationSetting, ProgressLog, SelectiveGroup, Task } from '../types';
 import { useAuth } from './useAuth';
 import { useFirestoreCollection } from './useFirestoreCollection';
@@ -20,14 +21,17 @@ const AppDataContext = createContext<AppDataValue | null>(null);
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const uid = user?.uid;
+  // 許可されたUID以外は、Firestore Rulesでどうせ拒否されるため購読自体を開始しない
+  // (permission-deniedエラーの発生と無駄なリクエストを防ぐ)。
+  const subscribeUid = uid === ALLOWED_UID ? uid : undefined;
 
-  const genres = useFirestoreCollection<Genre>(uid, 'genres');
-  const goals = useFirestoreCollection<Goal>(uid, 'goals');
-  const tasks = useFirestoreCollection<Task>(uid, 'tasks');
-  const selectiveGroups = useFirestoreCollection<SelectiveGroup>(uid, 'selectiveGroups');
-  const progressLogs = useFirestoreCollection<ProgressLog>(uid, 'progressLogs');
+  const genres = useFirestoreCollection<Genre>(subscribeUid, 'genres');
+  const goals = useFirestoreCollection<Goal>(subscribeUid, 'goals');
+  const tasks = useFirestoreCollection<Task>(subscribeUid, 'tasks');
+  const selectiveGroups = useFirestoreCollection<SelectiveGroup>(subscribeUid, 'selectiveGroups');
+  const progressLogs = useFirestoreCollection<ProgressLog>(subscribeUid, 'progressLogs');
   const notificationSettings = useFirestoreCollection<NotificationSetting>(
-    uid,
+    subscribeUid,
     'notificationSettings',
   );
 

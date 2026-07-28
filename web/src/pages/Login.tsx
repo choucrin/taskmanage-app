@@ -8,8 +8,10 @@ export function Login() {
     setError(null);
     try {
       await signInWithGoogle();
-    } catch {
-      setError('ログインに失敗しました。もう一度お試しください。');
+    } catch (e) {
+      console.error('Googleログインエラー:', e);
+      const code = e instanceof Object && 'code' in e ? String(e.code) : 'unknown';
+      setError(`ログインに失敗しました(${code})。もう一度お試しください。`);
     }
   }
 

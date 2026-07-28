@@ -2,14 +2,20 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // users/{uid} 配下の全データは、認証済み本人(uid一致)のみ読み書き可能とする。
-    // fcmToken等のユーザードキュメント自体、および配下の全サブコレクション(genres, goals,
-    // tasks, selectiveGroups, progressLogs, notificationSettings)に一括で適用される。
+    // 個人利用専用アプリのため、認証済み本人(uid一致)かつ
+    // 開発者本人のUIDと一致する場合のみ読み書きを許可する。
+    // Googleアカウントを持つ第三者がログインしても、ここで一切のアクセスが拒否される。
+    function isOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.uid == 'OBBBWdPsQqdzrJqDDLcHZ2EpAps2';
+    }
+
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if isOwner(uid);
       }
     }
 

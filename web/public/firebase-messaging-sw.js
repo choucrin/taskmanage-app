@@ -7,12 +7,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME',
+  apiKey: 'AIzaSyDv_zrrw11OrQBo9MllwhUbhX9pi3Eq0Ss',
+  authDomain: 'taskmanage-app.firebaseapp.com',
+  projectId: 'taskmanage-app',
+  storageBucket: 'taskmanage-app.firebasestorage.app',
+  messagingSenderId: '494506773459',
+  appId: '1:494506773459:web:2e5b8ac6b8c49aaa7ebd26',
 });
 
 const messaging = firebase.messaging();
