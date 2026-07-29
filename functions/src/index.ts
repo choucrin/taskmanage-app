@@ -3,6 +3,22 @@ import * as logger from 'firebase-functions/logger';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import {
+  buildBody,
+  CHEER_ALL_DONE,
+  CHEER_REMAINING,
+  CHEER_REST_DAY,
+  CHEER_TASK_LIST,
+  formatTaskLine,
+  isWithinSendWindow,
+  notificationKey,
+  PROGRESS_TITLE,
+  selectTodayTasks,
+  TASK_LIST_EMPTY_TITLE,
+  taskListTitle,
+  withCheer,
+  type TaskDoc,
+} from './notification';
 
 initializeApp();
 
@@ -27,34 +43,6 @@ function currentTimeHHmm(): string {
   const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
   const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
   return `${hour}:${minute}`;
-}
-
-/**
- * 通知を送る猶予(分)。
- * 設定時刻との分単位の完全一致を条件にすると、関数の起動遅延・一時的なFirestore障害・
- * 送信失敗があった場合に「その1分」を逃してその日の通知が丸ごと失われる。
- * 少しの猶予を持たせることで、次の実行(1分後)で取り返せるようにする。
- */
-const SEND_WINDOW_MINUTES = 5;
-
-/** "HH:mm" を0時からの経過分に変換する。書式が不正なら null */
-function toMinutesOfDay(hhmm: string): number | null {
-  const matched = /^(\d{2}):(\d{2})$/.exec(hhmm);
-  if (!matched) return null;
-  return Number(matched[1]) * 60 + Number(matched[2]);
-}
-
-/**
- * 設定時刻が「現在時刻からSEND_WINDOW_MINUTES分前まで」の範囲にあるか。
- * 日をまたぐケース(23:58設定を翌日00:01に送る等)は対象日が変わってしまうため、
- * 意図的に猶予の対象外としている。
- */
-function isWithinSendWindow(settingTime: string, nowHHmm: string): boolean {
-  const settingMinutes = toMinutesOfDay(settingTime);
-  const nowMinutes = toMinutesOfDay(nowHHmm);
-  if (settingMinutes === null || nowMinutes === null) return false;
-  const elapsed = nowMinutes - settingMinutes;
-  return elapsed >= 0 && elapsed <= SEND_WINDOW_MINUTES;
 }
 
 /** Asia/Tokyo基準の当日の YYYY-MM-DD */
@@ -83,23 +71,14 @@ function todayWeekday(): number {
   return map[label] ?? 0;
 }
 
-interface TaskDoc {
-  displayName: string;
-  schedule?: { weekdays?: number[]; dates?: string[] };
-  goalId: string;
+interface GoalDoc {
+  status?: 'active' | 'archived';
 }
 
 interface ProgressLogDoc {
   taskId: string;
   date: string;
   status: 'not_achieved' | 'achieved' | 'excluded';
-}
-
-function isTaskScheduledToday(task: TaskDoc, dateKey: string, weekday: number): boolean {
-  const { weekdays, dates } = task.schedule ?? {};
-  if (dates?.includes(dateKey)) return true;
-  if (weekdays?.includes(weekday)) return true;
-  return false;
 }
 
 /**
@@ -134,32 +113,6 @@ async function sendToUser(
   }
 }
 
-/** FCMのペイロード上限(4KB)に収めるため、本文に載せるタスクはこの件数までとする */
-const MAX_TASKS_IN_BODY = 20;
-/** 1件あたりのタスク名の最大表示文字数(日本語1文字=3バイトのため上限に効きやすい) */
-const MAX_TASK_NAME_LENGTH = 40;
-
-/**
- * タスク名の一覧を通知本文用の文字列に整形する。
- * 件数・文字数を打ち切ることで、タスクが増えてもFCMのペイロード上限を超えないようにする。
- */
-function formatTaskLines(displayNames: (string | undefined)[]): string {
-  const lines = displayNames.slice(0, MAX_TASKS_IN_BODY).map((name) => {
-    // Firestore側のデータ不備でdisplayNameが欠けていても通知全体を落とさない
-    const safeName = typeof name === 'string' ? name : '';
-    // 絵文字などのサロゲートペアを途中で分断しないよう、コードポイント単位で数える
-    const chars = Array.from(safeName);
-    const trimmed =
-      chars.length > MAX_TASK_NAME_LENGTH
-        ? `${chars.slice(0, MAX_TASK_NAME_LENGTH).join('')}…`
-        : safeName;
-    return `・${trimmed}`;
-  });
-  const rest = displayNames.length - lines.length;
-  if (rest > 0) lines.push(`ほか${rest}件`);
-  return lines.join('\n');
-}
-
 /**
  * 「このユーザーの・この種類の・この日時の通知」を送信済みとして記録する。
  * 記録できた場合のみ true を返し、既に記録済みなら false を返す。
@@ -174,7 +127,7 @@ async function markAsSentIfFirst(
   dateKey: string,
   timeHHmm: string,
 ): Promise<boolean> {
-  const docId = `${type}_${dateKey}_${timeHHmm}`;
+  const docId = notificationKey(type, dateKey, timeHHmm);
   try {
     await db
       .collection('users')
@@ -205,7 +158,7 @@ async function clearSentMark(uid: string, type: string, dateKey: string, timeHHm
       .collection('users')
       .doc(uid)
       .collection('notificationLogs')
-      .doc(`${type}_${dateKey}_${timeHHmm}`)
+      .doc(notificationKey(type, dateKey, timeHHmm))
       .delete();
   } catch (err) {
     logger.error('送信済み記録の取り消しに失敗しました', err);
@@ -278,6 +231,23 @@ export const checkAndSendNotifications = onSchedule(
   },
 );
 
+/** 対象日に実施予定のタスクをFirestoreから読み出す(絞り込み条件は selectTodayTasks 側) */
+async function loadTodayTasks(uid: string, dateKey: string, weekday: number) {
+  const [tasksSnapshot, goalsSnapshot] = await Promise.all([
+    db.collection('users').doc(uid).collection('tasks').get(),
+    db.collection('users').doc(uid).collection('goals').get(),
+  ]);
+
+  const archivedGoalIds = new Set(
+    goalsSnapshot.docs
+      .filter((d) => (d.data() as GoalDoc).status === 'archived')
+      .map((d) => d.id),
+  );
+
+  const tasks = tasksSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as TaskDoc) }));
+  return selectTodayTasks(tasks, archivedGoalIds, dateKey, weekday);
+}
+
 async function sendTaskListNotification(
   uid: string,
   fcmToken: string,
@@ -285,21 +255,23 @@ async function sendTaskListNotification(
   weekday: number,
   timeHHmm: string,
 ): Promise<boolean> {
-  const tasksSnapshot = await db.collection('users').doc(uid).collection('tasks').get();
-  const todayTasks = tasksSnapshot.docs
-    .map((d) => d.data() as TaskDoc)
-    .filter((t) => isTaskScheduledToday(t, dateKey, weekday));
+  const todayTasks = await loadTodayTasks(uid, dateKey, weekday);
 
   // 時刻までtagに含めることで、同じ日に通知時刻を変更した場合は
   // 前の通知を消さずに新しい通知として表示される。
-  const tag = `taskList_${dateKey}_${timeHHmm}`;
+  const tag = notificationKey('taskList', dateKey, timeHHmm);
 
   if (todayTasks.length === 0) {
-    return sendToUser(fcmToken, '本日のタスク', '本日実施予定のタスクはありません。', tag);
+    const body = withCheer('本日実施予定のタスクはありません。', CHEER_REST_DAY);
+    return sendToUser(fcmToken, TASK_LIST_EMPTY_TITLE, body, tag);
   }
 
-  const body = formatTaskLines(todayTasks.map((t) => t.displayName));
-  return sendToUser(fcmToken, `本日のタスク(${todayTasks.length}件)`, body, tag);
+  // その日のタスクを達成状況によらずすべて載せる
+  const body = buildBody(
+    todayTasks.map((t) => formatTaskLine(t.displayName)),
+    CHEER_TASK_LIST,
+  );
+  return sendToUser(fcmToken, taskListTitle(todayTasks.length), body, tag);
 }
 
 async function sendProgressNotification(
@@ -309,19 +281,10 @@ async function sendProgressNotification(
   weekday: number,
   timeHHmm: string,
 ): Promise<boolean> {
-  const [tasksSnapshot, logsSnapshot] = await Promise.all([
-    db.collection('users').doc(uid).collection('tasks').get(),
-    db
-      .collection('users')
-      .doc(uid)
-      .collection('progressLogs')
-      .where('date', '==', dateKey)
-      .get(),
+  const [todayTasks, logsSnapshot] = await Promise.all([
+    loadTodayTasks(uid, dateKey, weekday),
+    db.collection('users').doc(uid).collection('progressLogs').where('date', '==', dateKey).get(),
   ]);
-
-  const todayTasks = tasksSnapshot.docs
-    .map((d) => ({ id: d.id, ...(d.data() as TaskDoc) }))
-    .filter((t) => isTaskScheduledToday(t, dateKey, weekday));
 
   const logsByTaskId = new Map<string, ProgressLogDoc>();
   for (const doc of logsSnapshot.docs) {
@@ -329,17 +292,26 @@ async function sendProgressNotification(
     logsByTaskId.set(log.taskId, log);
   }
 
+  // 未完了 = まだ達成していないタスク。
+  // excluded(選択的グループの条件が他のタスクで満たされ、実施不要になったもの)は
+  // やらなくてよいタスクなので未完了には含めない。
   const notAchieved = todayTasks.filter((t) => {
     const status = logsByTaskId.get(t.id)?.status ?? 'not_achieved';
     return status === 'not_achieved';
   });
 
-  const tag = `progress_${dateKey}_${timeHHmm}`;
+  const tag = notificationKey('progress', dateKey, timeHHmm);
 
   if (notAchieved.length === 0) {
-    return sendToUser(fcmToken, '進捗状況', '本日のタスクはすべて達成済みです。', tag);
+    const body = withCheer('本日のタスクはすべて達成済みです。', CHEER_ALL_DONE);
+    return sendToUser(fcmToken, PROGRESS_TITLE, body, tag);
   }
 
-  const body = `未達成: ${notAchieved.length}件\n${formatTaskLines(notAchieved.map((t) => t.displayName))}`;
-  return sendToUser(fcmToken, '本日の進捗状況', body, tag);
+  // 未完了のタスクをすべて載せる。件数の見出しは打ち切り対象にせず必ず残す。
+  const body = buildBody(
+    notAchieved.map((t) => formatTaskLine(t.displayName)),
+    CHEER_REMAINING,
+    `未達成: ${notAchieved.length}件`,
+  );
+  return sendToUser(fcmToken, PROGRESS_TITLE, body, tag);
 }

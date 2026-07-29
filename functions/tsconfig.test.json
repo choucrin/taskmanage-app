@@ -1,0 +1,12 @@
+{
+  // ビルド用のtsconfig.jsonはテストを除外している(デプロイ成果物lib/にテストを含めないため)。
+  // vitestは型検査をしないので、そのままだとテストコードの型エラーを誰も検出できない。
+  // `npm run typecheck` でこの設定を使い、テストも含めて型を確認する。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src"],
+  "exclude": []
+}
