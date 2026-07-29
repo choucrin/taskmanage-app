@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
-import { updateItem, upsertProgressLog } from '../firebase/firestore';
+import { applyGoalProgress, upsertProgressLog } from '../firebase/firestore';
 import {
   evaluateGroupStatuses,
   evaluateSingleTaskStatus,
+  meetsArchiveThreshold,
   recalculateCumulativeAchieved,
   shouldArchiveGoal,
 } from '../utils/progress';
@@ -85,9 +86,10 @@ export function useProgressActions() {
       const updatedGoal = { ...goal, cumulativeAchieved };
       const archive = shouldArchiveGoal(updatedGoal);
 
-      await updateItem(uid, 'goals', goal.id, {
+      await applyGoalProgress(uid, goal.id, {
         cumulativeAchieved,
-        ...(archive ? { status: 'archived', archivedAt: Date.now() } : {}),
+        archive,
+        meetsThreshold: meetsArchiveThreshold(updatedGoal),
       });
 
       return archive ? { archivedGoalName: goal.name } : {};

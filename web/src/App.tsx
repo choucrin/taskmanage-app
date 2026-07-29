@@ -7,6 +7,7 @@ import { refreshMessagingServiceWorker } from './firebase/messaging';
 import { AppDataProvider, useAppData } from './hooks/AppDataContext';
 import { Archive } from './pages/Archive';
 import { GoalForm } from './pages/GoalForm';
+import { GoalManagement } from './pages/GoalManagement';
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { NotificationSettings } from './pages/NotificationSettings';
@@ -59,6 +60,7 @@ function AppRoutes() {
           <Route path="/progress" element={<ProgressBoard />} />
           <Route path="/archive" element={<Archive />} />
           <Route path="/goals/new" element={<GoalForm />} />
+          <Route path="/goals" element={<GoalManagement />} />
           <Route path="/tasks/new" element={<TaskSetup />} />
           <Route path="/tasks" element={<TaskManagement />} />
           <Route path="/notifications" element={<NotificationSettings />} />

@@ -22,6 +22,12 @@ export interface Goal {
   status: GoalStatus;
   /** 累積達成回数、または累積達成時間(分) */
   cumulativeAchieved: number;
+  /**
+   * 手動でアーカイブを解除した目標に立つフラグ。
+   * これがないと、達成条件を満たしたままの目標は解除直後の進捗登録で即座に再アーカイブされ、
+   * 解除操作が効いていないように見えてしまう。目標値を引き上げて未達成に戻ると解除される。
+   */
+  autoArchiveDisabled?: boolean;
   createdAt: number;
   archivedAt?: number;
 }

@@ -180,7 +180,9 @@
   color: var(--text);
 }
 
-.task-management-list {
+/* タスク管理と目標管理は同じ「一覧＋行＋インライン編集」の構造のためスタイルを共有する */
+.task-management-list,
+.goal-management-list {
   list-style: none;
   padding: 0;
   display: flex;
@@ -189,7 +191,8 @@
   margin-bottom: 16px;
 }
 
-.task-management-row {
+.task-management-row,
+.goal-management-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -200,30 +203,47 @@
   padding: 10px 12px;
 }
 
-.task-management-row__main {
+.task-management-row__main,
+.goal-management-row__main {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.task-management-row__name {
+.task-management-row__name,
+.goal-management-row__name {
   font-weight: bold;
 }
 
-.task-management-row__detail {
+.task-management-row__detail,
+.goal-management-row__detail {
   font-size: 13px;
   color: var(--text);
 }
 
-.task-management-row__actions {
+.task-management-row__actions,
+.goal-management-row__actions {
   display: flex;
   gap: 8px;
 }
 
-.task-management-edit-form {
+/* 目標管理は編集・アーカイブ・削除の3つが並ぶため、狭い画面では折り返す */
+.goal-management-row__actions {
+  flex-wrap: wrap;
+}
+
+.task-management-edit-form,
+.goal-management-edit-form {
   border: 1px solid var(--accent-border);
   border-radius: 8px;
   padding: 12px;
+}
+
+/* 単位変更など、保存前に気づいてほしい注意書き */
+.goal-management-edit-form__note {
+  font-size: 13px;
+  color: var(--text);
+  margin: 6px 0 0;
 }
 
 .task-management-edit-form__goal {
@@ -232,7 +252,8 @@
   margin-bottom: 8px;
 }
 
-.task-management-edit-form__actions {
+.task-management-edit-form__actions,
+.goal-management-edit-form__actions {
   display: flex;
   gap: 8px;
 }

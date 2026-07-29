@@ -5,6 +5,7 @@ const links = [
   { to: '/', label: '本日のタスク' },
   { to: '/progress', label: '進捗管理' },
   { to: '/goals/new', label: '目標登録' },
+  { to: '/goals', label: '目標管理' },
   { to: '/tasks/new', label: 'タスク設定' },
   { to: '/tasks', label: 'タスク管理' },
   { to: '/archive', label: 'アーカイブ' },
@@ -17,9 +18,12 @@ export function NavBar() {
       <ul className="navbar__list">
         {links.map((link) => (
           <li key={link.to}>
-            {/* /tasksは/tasks/newの前方一致になるためendを指定し、両方が同時に
-                アクティブ表示されるのを防ぐ */}
-            <NavLink to={link.to} end={link.to === '/' || link.to === '/tasks'}>
+            {/* /tasksは/tasks/newの、/goalsは/goals/newの前方一致になるためendを指定し、
+                両方が同時にアクティブ表示されるのを防ぐ */}
+            <NavLink
+              to={link.to}
+              end={link.to === '/' || link.to === '/tasks' || link.to === '/goals'}
+            >
               {link.label}
             </NavLink>
           </li>

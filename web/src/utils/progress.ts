@@ -66,10 +66,79 @@ export function calculateGoalPercent(goal: Goal): number {
   return (goal.cumulativeAchieved / goal.targetValue) * 100;
 }
 
-/** アーカイブすべきかどうか(targetRatePercentが設定されていればそれを基準、なければ100%) */
-export function shouldArchiveGoal(goal: Goal): boolean {
+/** 達成条件を満たしているか(targetRatePercentが設定されていればそれを基準、なければ100%) */
+export function meetsArchiveThreshold(goal: Goal): boolean {
   const threshold = goal.targetRatePercent && goal.targetRatePercent > 0 ? goal.targetRatePercent : 100;
   return calculateGoalPercent(goal) >= threshold;
+}
+
+/**
+ * 進捗登録に伴って自動アーカイブすべきかどうか。
+ * 手動でアーカイブを解除した目標(autoArchiveDisabled)は対象外にする。
+ * 除外しないと、達成条件を満たしたままの目標は解除直後の進捗登録で即座に再アーカイブされ、
+ * 利用者からは「アーカイブ解除ボタンが効かない」ように見えてしまう。
+ */
+export function shouldArchiveGoal(goal: Goal): boolean {
+  if (goal.autoArchiveDisabled) return false;
+  return meetsArchiveThreshold(goal);
+}
+
+/**
+ * 目標の削除時に、一緒に消すべき進捗ログのIDを列挙する。
+ * goalIdだけで絞ると、goalIdが欠けた古いログが取り残されて容量を圧迫し続けるため、
+ * その目標のタスクに紐づくログも対象に含める。
+ */
+export function collectGoalProgressLogIds(
+  logs: ProgressLog[],
+  goalId: string,
+  taskIds: string[],
+): string[] {
+  const taskIdSet = new Set(taskIds);
+  return logs.filter((l) => l.goalId === goalId || taskIdSet.has(l.taskId)).map((l) => l.id);
+}
+
+/**
+ * これらのタスクを削除したときに影響を受ける選択的グループのIDを列挙する。
+ *
+ * タスク側の selectiveGroupId とグループ側の taskIds は別ドキュメントにあり、
+ * 購読スナップショットではどちらか一方だけが古い状態になりうる。
+ * 片方だけを根拠にするとグループの整理を取りこぼすため、どちらかが関係を示していれば対象にする。
+ */
+export function collectAffectedGroupIds(deletedTasks: Task[], groups: SelectiveGroup[]): string[] {
+  const deletedTaskIds = new Set(deletedTasks.map((t) => t.id));
+  const groupIds = new Set<string>();
+  for (const task of deletedTasks) {
+    if (task.selectiveGroupId) groupIds.add(task.selectiveGroupId);
+  }
+  for (const group of groups) {
+    if (group.taskIds.some((id) => deletedTaskIds.has(id))) groupIds.add(group.id);
+  }
+  return [...groupIds];
+}
+
+/** タスクを取り除いた後の選択的グループがどうあるべきか */
+export type GroupResolution =
+  | { action: 'none' }
+  | { action: 'delete' }
+  | { action: 'update'; taskIds: string[]; minRequired: number };
+
+/**
+ * 指定タスクをグループから取り除いた結果を求める。
+ * 全タスクが消える場合はグループごと削除、残る場合は
+ * 残タスク数を下回るminRequiredを調整する(そのままだと永久に達成不能になるため)。
+ */
+export function resolveGroupAfterTaskRemoval(
+  group: SelectiveGroup,
+  deletedTaskIds: Set<string>,
+): GroupResolution {
+  const remainingTaskIds = group.taskIds.filter((id) => !deletedTaskIds.has(id));
+  if (remainingTaskIds.length === group.taskIds.length) return { action: 'none' };
+  if (remainingTaskIds.length === 0) return { action: 'delete' };
+  return {
+    action: 'update',
+    taskIds: remainingTaskIds,
+    minRequired: Math.min(group.minRequired, remainingTaskIds.length),
+  };
 }
 
 /**
