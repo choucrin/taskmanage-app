@@ -3,6 +3,7 @@ import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-d
 import { NavBar } from './components/NavBar';
 import { ALLOWED_UID } from './constants';
 import { signOutUser } from './firebase/auth';
+import { refreshMessagingServiceWorker } from './firebase/messaging';
 import { AppDataProvider, useAppData } from './hooks/AppDataContext';
 import { Archive } from './pages/Archive';
 import { GoalForm } from './pages/GoalForm';
@@ -69,6 +70,12 @@ function AppRoutes() {
 }
 
 function App() {
+  useEffect(() => {
+    // 通知用Service Workerは専用スコープのため通常のページ遷移では更新されない。
+    // 起動時に明示的に更新チェックを促し、古い表示ロジックが残らないようにする。
+    void refreshMessagingServiceWorker();
+  }, []);
+
   return (
     <Router>
       <AppDataProvider>

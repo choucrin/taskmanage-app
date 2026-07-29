@@ -37,5 +37,9 @@ for (const [placeholder, value] of Object.entries(replacements)) {
   content = content.replaceAll(placeholder, value || 'REPLACE_ME');
 }
 
+// baseパスは vite.config.ts と同じく process.env.VITE_BASE_PATH を参照し、未設定なら '/'。
+// 既定値があるため未設定でも警告は不要で、上の必須チェックには含めない。
+content = content.replaceAll('__VITE_BASE_PATH__', process.env.VITE_BASE_PATH || '/');
+
 writeFileSync(path.join(webRoot, 'public', 'firebase-messaging-sw.js'), content);
 console.log('[generate-sw-config] public/firebase-messaging-sw.js を生成しました。');

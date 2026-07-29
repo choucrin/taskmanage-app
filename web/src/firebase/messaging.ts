@@ -32,6 +32,28 @@ export async function requestNotificationPermissionAndToken(): Promise<string | 
   return token;
 }
 
+/**
+ * 登録済みのFCM用Service Workerに更新チェックを促す。
+ *
+ * このSWは専用スコープ(firebase-cloud-messaging-push-scope)に登録されており、
+ * アプリ画面はそのスコープ外にあるため、通常のページ遷移では更新が検知されない。
+ * 放置するとブラウザ既定の定期チェック(最大24時間)まで古いSWが残り続け、
+ * 通知の表示ロジックを変更した際に新旧の齟齬で通知が正しく表示されなくなる。
+ * 失敗してもアプリの動作には影響しないため、例外は握りつぶす。
+ */
+export async function refreshMessagingServiceWorker(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const base = import.meta.env.BASE_URL;
+    const registration = await navigator.serviceWorker.getRegistration(
+      `${base}firebase-cloud-messaging-push-scope`,
+    );
+    await registration?.update();
+  } catch {
+    // 更新チェックの失敗は通知以外の機能に影響しないため無視する
+  }
+}
+
 export async function subscribeToForegroundMessages(
   callback: (payload: unknown) => void,
 ) {
