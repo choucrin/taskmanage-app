@@ -111,6 +111,32 @@
   width: 70px;
 }
 
+/*
+ * バージョン表示。デプロイ反映の確認用なので常に見えるが、目立ちすぎないよう小さく薄く出す。
+ * pointer-events: none で、下にあるボタンやリンクの操作を一切邪魔しない。
+ * z-indexはトースト(1000)より下にして、通知メッセージに重ならないようにする。
+ * iOSのホーム画面追加時にホームバーへ潜り込まないよう safe-area 分を加算する。
+ */
+.version-badge {
+  position: fixed;
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  /*
+   * 下端に置く。#root の padding-bottom が32pxあるため、ここ(下端8px・高さ11px)なら
+   * 最下部までスクロールしても本文と重ならない。
+   * トースト(下端16px・中央寄せ)が表示されている5秒間だけは隠れるが、
+   * 本文と常に重なるより弊害が小さいのでこの位置を選んでいる。
+   */
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text);
+  opacity: 0.55;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  z-index: 10;
+}
+
 .toast {
   position: fixed;
   bottom: 16px;
@@ -118,6 +144,8 @@
   transform: translateX(-50%);
   background: var(--text-h);
   color: var(--bg);
+  /* 目標名を含む可変長メッセージが狭い画面で伸びすぎないようにする */
+  max-width: min(90vw, 480px);
   padding: 12px 40px 12px 16px;
   border-radius: 8px;
   box-shadow: var(--shadow);

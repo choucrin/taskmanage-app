@@ -8,6 +8,7 @@
     "dev": "vite",
     "prebuild": "node scripts/generate-sw-config.mjs",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/generate-404.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run"

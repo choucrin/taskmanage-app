@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { NavBar } from './components/NavBar';
+import { VersionBadge } from './components/VersionBadge';
 import { ALLOWED_UID } from './constants';
 import { signOutUser } from './firebase/auth';
 import { refreshMessagingServiceWorker } from './firebase/messaging';
@@ -78,12 +79,25 @@ function App() {
     void refreshMessagingServiceWorker();
   }, []);
 
+  // GitHub Pagesは https://choucrin.github.io/taskmanage-app/ のサブパスで配信される。
+  // basenameを渡さないとpathnameが '/taskmanage-app/' のままどのルートにも一致せず、
+  // 末尾の <Navigate to="/"> でURLが '/' に書き換わってしまう。
+  // その状態で再読み込みするとアプリの外(GitHubのユーザーページ)に出てしまい、
+  // Service Workerのスコープからも外れる。ローカル開発ではBASE_URLが '/' のため影響しない。
   return (
-    <Router>
-      <AppDataProvider>
-        <AppRoutes />
-      </AppDataProvider>
-    </Router>
+    <>
+      <Router basename={import.meta.env.BASE_URL}>
+        <AppDataProvider>
+          <AppRoutes />
+        </AppDataProvider>
+      </Router>
+      {/*
+        Routerの外に置く。basenameとURLが食い違うとRouterは配下を何も描画しないため、
+        中に入れると「画面が真っ白でバージョンも分からない」状態になってしまう。
+        デプロイ反映の確認手段なので、どんな状態でも必ず見えるようにする。
+      */}
+      <VersionBadge />
+    </>
   );
 }
 
