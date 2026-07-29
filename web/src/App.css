@@ -137,6 +137,21 @@
   z-index: 10;
 }
 
+/* 通知の受信可否の表示。状態が一目で分かるよう左に色付きの縦線を出す */
+.push-status {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  margin: 0 0 12px;
+}
+
+.push-status--ready {
+  border-left-color: var(--accent);
+}
+
+.push-status--warning {
+  border-left-color: var(--warning);
+}
+
 .toast {
   position: fixed;
   bottom: 16px;

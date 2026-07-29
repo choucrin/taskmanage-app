@@ -12,4 +12,4 @@ export const ALLOWED_UID = 'OBBBWdPsQqdzrJqDDLcHZ2EpAps2';
  * (ver.01.0 → ver.01.1 → … → ver.01.9 → ver.02.0)。
  * 書式は `ver.NN.N` 固定。constants.test.ts で書式を検証している。
  */
-export const APP_VERSION = 'ver.01.0';
+export const APP_VERSION = 'ver.01.1';

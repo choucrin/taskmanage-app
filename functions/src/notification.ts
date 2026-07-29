@@ -67,6 +67,19 @@ export function selectTodayTasks<T extends TaskDoc>(
     .filter((t) => !archivedGoalIds.has(t.goalId));
 }
 
+/**
+ * FCMトークンをFirestoreのドキュメントIDとして使える形にする。
+ * '/' はパス区切りとして解釈され意図しない階層を作ってしまうため置き換える。
+ * (実際のFCMトークンはURLセーフな文字種なので通常は素通りする)
+ *
+ * web側の `web/src/firebase/firestore.ts` にも同名の関数がある。
+ * 規則がずれると失効トークンの削除が空振りするため、両方を同時に直すこと。
+ * 同じ入出力を確かめるテストを双方に置いている。
+ */
+export function fcmTokenDocId(token: string): string {
+  return token.replace(/\//g, '_');
+}
+
 /** 通知の識別キー。tagと送信済み記録のドキュメントIDに共通で使う */
 export function notificationKey(type: string, dateKey: string, timeHHmm: string): string {
   return `${type}_${dateKey}_${timeHHmm}`;

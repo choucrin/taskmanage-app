@@ -2,17 +2,23 @@ import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messagi
 import { app } from './config';
 
 /**
- * FCMのデバイストークンを取得する。
- * iOS/iPadOSはPWAとしてホーム画面に追加されていないと通知許可自体が機能しないため、
- * 呼び出し側で「ホーム画面に追加してください」等の案内を出すこと。
+ * 通知の許可状態。
+ * ブラウザがWeb Pushに対応していない場合は 'unsupported'。
  */
-export async function requestNotificationPermissionAndToken(): Promise<string | null> {
+export type NotificationPermissionState = 'unsupported' | 'default' | 'granted' | 'denied';
+
+/** 許可ダイアログを出さずに、現在の許可状態だけを調べる */
+export async function getNotificationPermissionState(): Promise<NotificationPermissionState> {
   const supported = await isSupported().catch(() => false);
-  if (!supported) return null;
+  if (!supported || typeof Notification === 'undefined') return 'unsupported';
+  return Notification.permission;
+}
 
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return null;
-
+/**
+ * FCM用Service Workerを登録し、この端末のトークンを取得する。
+ * 通知が許可済みであることが前提(未許可だとgetTokenが失敗する)。
+ */
+async function registerAndGetToken(): Promise<string | null> {
   const messaging = getMessaging(app);
   // vite-plugin-pwaが生成するsw.js(vite.config.tsのbasePath配下)と競合しないよう、
   // firebase-messaging-sw.jsは専用スコープに登録する。
@@ -29,7 +35,33 @@ export async function requestNotificationPermissionAndToken(): Promise<string | 
     vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
-  return token;
+  return token || null;
+}
+
+/**
+ * 通知の許可を求め、FCMのデバイストークンを取得する。
+ * iOS/iPadOSはPWAとしてホーム画面に追加されていないと通知許可自体が機能しないため、
+ * 呼び出し側で「ホーム画面に追加してください」等の案内を出すこと。
+ */
+export async function requestNotificationPermissionAndToken(): Promise<string | null> {
+  if ((await getNotificationPermissionState()) === 'unsupported') return null;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return null;
+
+  return registerAndGetToken();
+}
+
+/**
+ * 既に許可済みの場合のみ、許可ダイアログを出さずに現在のトークンを取得する。
+ *
+ * トークンはブラウザのデータ削除・Service Workerの登録解除・FCM側のローテーションなどで
+ * 変わることがあり、その場合Firestoreに保存済みの古いトークン宛の送信は届かなくなる。
+ * 呼び出し側はこの値と保存済みの値を突き合わせ、食い違っていれば保存し直すこと。
+ */
+export async function getCurrentFcmToken(): Promise<string | null> {
+  if ((await getNotificationPermissionState()) !== 'granted') return null;
+  return registerAndGetToken();
 }
 
 /**

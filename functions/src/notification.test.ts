@@ -5,6 +5,7 @@ import {
   CHEER_REMAINING,
   CHEER_REST_DAY,
   CHEER_TASK_LIST,
+  fcmTokenDocId,
   formatTaskLine,
   joinLinesWithinBudget,
   MAX_BODY_BYTES,
@@ -200,6 +201,24 @@ describe('selectTodayTasks(通知対象タスクの絞り込み)', () => {
   it('スケジュール未設定のタスクは対象にしない', () => {
     expect(selectTodayTasks([makeTask({ id: 't1' })], new Set(), dateKey, weekday)).toHaveLength(0);
     expect(isTaskScheduledToday({ displayName: 'x', goalId: 'g' }, dateKey, weekday)).toBe(false);
+  });
+});
+
+describe('fcmTokenDocId', () => {
+  // web側(web/src/firebase/firestore.ts)にも同名の関数があり、同じ結果を返す必要がある。
+  // ずれると、失効したトークンを削除しようとしても別のドキュメントIDを指して空振りする。
+  // web/src/firebase/firestore.test.ts に同じケースを置いているので、片方を直したら両方直すこと。
+  it('通常のFCMトークンはそのまま使える', () => {
+    const token = 'cXf1a2B3-d4E5_f6:APA91bHqRs-TuV_wXyZ0123456789';
+    expect(fcmTokenDocId(token)).toBe(token);
+  });
+
+  it("'/' はパス区切りになるため置き換える", () => {
+    expect(fcmTokenDocId('abc/def/ghi')).toBe('abc_def_ghi');
+  });
+
+  it('空文字でも例外にならない', () => {
+    expect(fcmTokenDocId('')).toBe('');
   });
 });
 

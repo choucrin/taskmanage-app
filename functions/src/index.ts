@@ -9,6 +9,7 @@ import {
   CHEER_REMAINING,
   CHEER_REST_DAY,
   CHEER_TASK_LIST,
+  fcmTokenDocId,
   formatTaskLine,
   isWithinSendWindow,
   notificationKey,
@@ -93,24 +94,93 @@ interface ProgressLogDoc {
  * 置き換えられるため、万一二重送信された場合でも利用者の画面には1件しか残らない。
  */
 async function sendToUser(
-  fcmToken: string,
+  uid: string,
+  fcmTokens: string[],
   title: string,
   body: string,
   tag: string,
 ): Promise<boolean> {
-  try {
-    await messaging.send({
-      token: fcmToken,
-      data: { title, body, tag },
-      // data限定メッセージは省電力状態の端末で配信が遅延することがあるため、
-      // 利用者に見せる通知として高優先度を明示する。
-      webpush: { headers: { Urgency: 'high' } },
-    });
-    return true;
-  } catch (err) {
-    logger.error('FCM送信に失敗しました', err);
-    return false;
+  let sentToAny = false;
+
+  for (const token of fcmTokens) {
+    try {
+      await messaging.send({
+        token,
+        data: { title, body, tag },
+        // data限定メッセージは省電力状態の端末で配信が遅延することがあるため、
+        // 利用者に見せる通知として高優先度を明示する。
+        webpush: { headers: { Urgency: 'high' } },
+      });
+      sentToAny = true;
+    } catch (err) {
+      // firebase-adminは err.code を公開APIとして持つ。errorInfo.code は内部表現だが
+      // 版によってはこちらにしか入らないため両方見る。
+      const code =
+        (err as { code?: string }).code ?? (err as { errorInfo?: { code?: string } }).errorInfo?.code;
+      if (EXPIRED_TOKEN_ERROR_CODES.has(code ?? '')) {
+        // アプリの削除・ブラウザのデータ削除などでトークンが失効している。
+        // 消さないと毎回この端末宛の送信に失敗し続けるため、登録から取り除く。
+        await deleteFcmToken(uid, token);
+        logger.info('失効した通知先を登録から削除しました', { uid });
+      } else {
+        logger.error('FCM送信に失敗しました', err);
+      }
+    }
   }
+
+  // 複数端末のうち一部にだけ届いた場合も成功として扱う。
+  // 失敗した端末のために再送すると、成功した端末に同じ通知が二重に届いてしまうため。
+  return sentToAny;
+}
+
+/** 恒久的にトークンが使えなくなったことを示すエラーコード(一時的な失敗は含めない) */
+const EXPIRED_TOKEN_ERROR_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
+
+/** 失効した通知先を登録から削除する */
+async function deleteFcmToken(uid: string, token: string) {
+  try {
+    await db
+      .collection('users')
+      .doc(uid)
+      .collection('fcmTokens')
+      .doc(fcmTokenDocId(token))
+      .delete();
+
+    // 旧形式(users/{uid}.fcmToken)から読んだトークンの場合、サブコレクションには
+    // 該当ドキュメントが無く上の delete は空振りする。フィールド側も消さないと
+    // 失効したまま残り続け、毎日送信に失敗してはリトライを繰り返すことになる。
+    const userRef = db.collection('users').doc(uid);
+    const snapshot = await userRef.get();
+    if (snapshot.get('fcmToken') === token) {
+      await userRef.update({ fcmToken: FieldValue.delete() });
+    }
+  } catch (err) {
+    logger.error('失効した通知先の削除に失敗しました', err);
+  }
+}
+
+/**
+ * 通知先のFCMトークンを読み出す。
+ *
+ * 端末ごとに1ドキュメントを持つため、PCとスマホなど複数の端末に同時に送れる。
+ * サブコレクションが空の場合は、旧形式(users/{uid}.fcmToken)の単一フィールドを使う。
+ * 利用者がアプリを開けば新形式で登録され直すため、この移行用の読み替えは
+ * 切り替え期間中に通知が途切れないようにするためのもの。
+ */
+async function loadFcmTokens(uid: string): Promise<string[]> {
+  const snapshot = await db.collection('users').doc(uid).collection('fcmTokens').get();
+  const tokens = snapshot.docs
+    .map((d) => (d.data() as { token?: unknown }).token)
+    .filter((t): t is string => typeof t === 'string' && t.length > 0);
+  if (tokens.length > 0) return tokens;
+
+  // 新形式が空のときだけ旧形式を読む。移行が済めばこの読み取りは発生しなくなる。
+  const userSnapshot = await db.collection('users').doc(uid).get();
+  const legacyToken = userSnapshot.get('fcmToken') as string | undefined;
+  return legacyToken ? [legacyToken] : [];
 }
 
 /**
@@ -177,55 +247,64 @@ export const checkAndSendNotifications = onSchedule(
     const dateKey = todayDateKey();
     const weekday = todayWeekday();
 
-    const usersSnapshot = await db.collection('users').get();
+    // 対象は個人利用の1ユーザーだけなので、usersコレクション全体は読まず直接引く。
+    // コレクションとして取得すると「フィールドを持たずサブコレクションだけがある
+    // 実体のないドキュメント」が結果に含まれない。通知先(fcmTokens)はサブコレクションで
+    // 持つようになったため、親ドキュメントが空だと通知先があっても対象外になってしまう。
+    const uid = ALLOWED_UID;
 
-    for (const userDoc of usersSnapshot.docs) {
-      const uid = userDoc.id;
-      if (uid !== ALLOWED_UID) continue;
-      const fcmToken = userDoc.data().fcmToken as string | undefined;
-      if (!fcmToken) continue;
+    const settingsSnapshot = await db
+      .collection('users')
+      .doc(uid)
+      .collection('notificationSettings')
+      .get();
 
-      const settingsSnapshot = await db
-        .collection('users')
-        .doc(uid)
-        .collection('notificationSettings')
-        .get();
+    const dueSettings = settingsSnapshot.docs
+      .map((d) => d.data() as { type: string; enabled: boolean; time: string })
+      .filter((s) => s.enabled && isWithinSendWindow(s.time, nowHHmm))
+      .filter((s) => s.type === 'taskList' || s.type === 'progress');
+    if (dueSettings.length === 0) return;
 
-      for (const settingDoc of settingsSnapshot.docs) {
-        const setting = settingDoc.data() as { type: string; enabled: boolean; time: string };
-        if (!setting.enabled || !isWithinSendWindow(setting.time, nowHHmm)) continue;
-        if (setting.type !== 'taskList' && setting.type !== 'progress') continue;
+    // 通知先の読み取りは送信予定がある時だけにする。毎分読むと課金対象の読み取りが
+    // 無駄に増えるが、ここに来るのは1日のうち猶予(SEND_WINDOW_MINUTES)の間だけで済む。
+    // 送信済み判定より前に確認するのは、通知先が無いまま送信済み記録の書き込みと
+    // 取り消しを毎分繰り返すのを避けるため。
+    const fcmTokens = await loadFcmTokens(uid);
+    if (fcmTokens.length === 0) {
+      logger.warn('通知先の端末が登録されていないため送信をスキップしました', { uid });
+      return;
+    }
 
-        // 記録・tagのキーには実行時刻(nowHHmm)ではなく設定時刻(setting.time)を使う。
-        // 猶予内に複数回実行されても同じキーになるため、重複送信を確実に弾ける。
-        const isFirstSend = await markAsSentIfFirst(uid, setting.type, dateKey, setting.time);
-        if (!isFirstSend) {
-          logger.info('この設定時刻の通知は送信済みのためスキップしました', {
-            uid,
-            type: setting.type,
-            date: dateKey,
-            time: setting.time,
-          });
-          continue;
-        }
+    for (const setting of dueSettings) {
+      // 記録・tagのキーには実行時刻(nowHHmm)ではなく設定時刻(setting.time)を使う。
+      // 猶予内に複数回実行されても同じキーになるため、重複送信を確実に弾ける。
+      const isFirstSend = await markAsSentIfFirst(uid, setting.type, dateKey, setting.time);
+      if (!isFirstSend) {
+        logger.info('この設定時刻の通知は送信済みのためスキップしました', {
+          uid,
+          type: setting.type,
+          date: dateKey,
+          time: setting.time,
+        });
+        continue;
+      }
 
-        // 通知本文の組み立て(Firestore読み取り)で例外が出ても、他の設定や他ユーザーの
-        // 処理まで巻き添えで止まらないようここで受け止める。
-        let sent = false;
-        try {
-          sent =
-            setting.type === 'taskList'
-              ? await sendTaskListNotification(uid, fcmToken, dateKey, weekday, setting.time)
-              : await sendProgressNotification(uid, fcmToken, dateKey, weekday, setting.time);
-        } catch (err) {
-          logger.error('通知の組み立て中にエラーが発生しました', err);
-        }
+      // 通知本文の組み立て(Firestore読み取り)で例外が出ても、他の設定の処理まで
+      // 巻き添えで止まらないようここで受け止める。
+      let sent = false;
+      try {
+        sent =
+          setting.type === 'taskList'
+            ? await sendTaskListNotification(uid, fcmTokens, dateKey, weekday, setting.time)
+            : await sendProgressNotification(uid, fcmTokens, dateKey, weekday, setting.time);
+      } catch (err) {
+        logger.error('通知の組み立て中にエラーが発生しました', err);
+      }
 
-        // 送信できなかった場合は記録を取り消す。猶予(SEND_WINDOW_MINUTES)内であれば
-        // 次回以降の実行で再送されるため、「送っていないのに送信済み扱い」で通知が失われない。
-        if (!sent) {
-          await clearSentMark(uid, setting.type, dateKey, setting.time);
-        }
+      // 送信できなかった場合は記録を取り消す。猶予(SEND_WINDOW_MINUTES)内であれば
+      // 次回以降の実行で再送されるため、「送っていないのに送信済み扱い」で通知が失われない。
+      if (!sent) {
+        await clearSentMark(uid, setting.type, dateKey, setting.time);
       }
     }
   },
@@ -250,7 +329,7 @@ async function loadTodayTasks(uid: string, dateKey: string, weekday: number) {
 
 async function sendTaskListNotification(
   uid: string,
-  fcmToken: string,
+  fcmTokens: string[],
   dateKey: string,
   weekday: number,
   timeHHmm: string,
@@ -263,7 +342,7 @@ async function sendTaskListNotification(
 
   if (todayTasks.length === 0) {
     const body = withCheer('本日実施予定のタスクはありません。', CHEER_REST_DAY);
-    return sendToUser(fcmToken, TASK_LIST_EMPTY_TITLE, body, tag);
+    return sendToUser(uid, fcmTokens, TASK_LIST_EMPTY_TITLE, body, tag);
   }
 
   // その日のタスクを達成状況によらずすべて載せる
@@ -271,12 +350,12 @@ async function sendTaskListNotification(
     todayTasks.map((t) => formatTaskLine(t.displayName)),
     CHEER_TASK_LIST,
   );
-  return sendToUser(fcmToken, taskListTitle(todayTasks.length), body, tag);
+  return sendToUser(uid, fcmTokens, taskListTitle(todayTasks.length), body, tag);
 }
 
 async function sendProgressNotification(
   uid: string,
-  fcmToken: string,
+  fcmTokens: string[],
   dateKey: string,
   weekday: number,
   timeHHmm: string,
@@ -304,7 +383,7 @@ async function sendProgressNotification(
 
   if (notAchieved.length === 0) {
     const body = withCheer('本日のタスクはすべて達成済みです。', CHEER_ALL_DONE);
-    return sendToUser(fcmToken, PROGRESS_TITLE, body, tag);
+    return sendToUser(uid, fcmTokens, PROGRESS_TITLE, body, tag);
   }
 
   // 未完了のタスクをすべて載せる。件数の見出しは打ち切り対象にせず必ず残す。
@@ -313,5 +392,5 @@ async function sendProgressNotification(
     CHEER_REMAINING,
     `未達成: ${notAchieved.length}件`,
   );
-  return sendToUser(fcmToken, PROGRESS_TITLE, body, tag);
+  return sendToUser(uid, fcmTokens, PROGRESS_TITLE, body, tag);
 }

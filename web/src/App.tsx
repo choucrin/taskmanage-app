@@ -5,6 +5,7 @@ import { VersionBadge } from './components/VersionBadge';
 import { ALLOWED_UID } from './constants';
 import { signOutUser } from './firebase/auth';
 import { refreshMessagingServiceWorker } from './firebase/messaging';
+import { ensurePushRegistration } from './firebase/pushRegistration';
 import { AppDataProvider, useAppData } from './hooks/AppDataContext';
 import { Archive } from './pages/Archive';
 import { GoalForm } from './pages/GoalForm';
@@ -45,6 +46,14 @@ function LoadError() {
 
 function AppRoutes() {
   const { uid, authLoading, loading, hasError } = useAppData();
+
+  useEffect(() => {
+    if (uid !== ALLOWED_UID) return;
+    // 通知設定タブを開かなくても登録の綻びを直せるよう、起動時にも確認する。
+    // トークンはブラウザのデータ削除やSWの登録解除で変わることがあり、
+    // 気づかないうちに通知だけが届かなくなるのを防ぐ。
+    void ensurePushRegistration(uid);
+  }, [uid]);
 
   if (authLoading) return <div className="loading">読み込み中...</div>;
   if (!uid) return <Login />;

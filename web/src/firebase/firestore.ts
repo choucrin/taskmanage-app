@@ -334,9 +334,38 @@ export async function deleteGoalAndCleanup(
   await deleteDoc(doc(db, 'users', uid, 'goals', goalId));
 }
 
-/** Cloud Functionsからの通知送信先として、ユーザードキュメントにFCMトークンを保存する */
+/**
+ * FCMトークンをFirestoreのドキュメントIDとして使える形にする。
+ * '/' はパス区切りとして解釈され意図しない階層を作ってしまうため置き換える。
+ * (実際のFCMトークンはURLセーフな文字種なので通常は素通りする)
+ *
+ * Cloud Functions側の `functions/src/notification.ts` にも同名の関数がある。
+ * 規則がずれると失効トークンの削除が空振りするため、両方を同時に直すこと。
+ * 同じ入出力を確かめるテストを双方に置いている。
+ */
+export function fcmTokenDocId(token: string): string {
+  return token.replace(/\//g, '_');
+}
+
+/**
+ * この端末のFCMトークンを通知先として登録する。
+ *
+ * 端末ごとに1ドキュメントを持つ。ユーザードキュメントの単一フィールドで持つと、
+ * 後から開いた端末が前の端末の登録を上書きしてしまい、PCとスマホの両方で
+ * 受け取ることができないうえ、上書きされた側は「受け取れる状態」と表示したまま
+ * 実際には届かなくなる。
+ */
 export async function saveFcmToken(uid: string, token: string) {
-  await setDoc(doc(db, 'users', uid), { fcmToken: token }, { merge: true });
+  await setDoc(doc(db, 'users', uid, 'fcmTokens', fcmTokenDocId(token)), {
+    token,
+    updatedAt: Date.now(),
+  });
+}
+
+/** この端末のトークンが通知先として登録済みかどうか */
+export async function isFcmTokenRegistered(uid: string, token: string): Promise<boolean> {
+  const snapshot = await getDoc(doc(db, 'users', uid, 'fcmTokens', fcmTokenDocId(token)));
+  return snapshot.exists();
 }
 
 /** 通知設定(taskList/progress)を決定的なドキュメントIDでUpsertする */
